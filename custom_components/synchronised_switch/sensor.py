@@ -7,10 +7,10 @@ import voluptuous as vol
 
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 
-from homeassistant.components.group.entity import GroupEntity
 
-# from homeassistant.helpers.entity import ToggleEntity
-from homeassistant.components.light import LightEntity
+from homeassistant.helpers.entity import ToggleEntity
+# from homeassistant.components.light import LightEntity
+# from homeassistant.components.group.entity import GroupEntity
 
 
 from homeassistant.helpers import config_validation as cv, entity_registry as er
@@ -59,7 +59,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-class SyncSwitchGroup(GroupEntity, LightEntity):
+class SyncSwitchGroup(ToggleEntity):
     """A Synchronised Group of Switches"""
 
     def __init__(
