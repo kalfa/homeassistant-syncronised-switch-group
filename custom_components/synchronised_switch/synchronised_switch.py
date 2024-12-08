@@ -8,7 +8,7 @@ from typing import Any, Iterable, Optional
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.components.group.entity import GroupEntity
 
-from homeassistant.components.sensor import PLATFORM_SCHEMA
+from homeassistant.components.group import PLATFORM_SCHEMA as HASS_PLATFORM_SCHEMA
 
 from homeassistant.helpers import entity_registry as er
 from homeassistant.core import Event, EventStateChangedData, callback, HomeAssistant
@@ -44,7 +44,7 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORM_SCHEMA.extend(DOMAIN_PLATFORM_SCHEMA)
+HASS_PLATFORM_SCHEMA = HASS_PLATFORM_SCHEMA.extend(schema=DOMAIN_PLATFORM_SCHEMA)
 
 class SyncSwitchGroup(GroupEntity, SwitchEntity):
     """A Synchronised Group of Switches"""
