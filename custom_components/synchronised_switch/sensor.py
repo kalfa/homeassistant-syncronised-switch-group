@@ -8,7 +8,9 @@ import voluptuous as vol
 from homeassistant.components.sensor import PLATFORM_SCHEMA
 
 from homeassistant.components.group.entity import GroupEntity
-from homeassistant.helpers.entity import ToggleEntity
+
+# from homeassistant.helpers.entity import ToggleEntity
+from homeassistant.components.light import LightEntity
 
 
 from homeassistant.helpers import config_validation as cv, entity_registry as er
@@ -22,7 +24,8 @@ from homeassistant.helpers.typing import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-# from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
+
+from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.const import (
     CONF_NAME,
@@ -50,18 +53,25 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
         vol.Optional(CONF_UNIQUE_ID): cv.string,
-        vol.Required(CONF_MASTER): cv.entity_domain(LIGHT_DOMAIN),
-        vol.Required(CONF_SLAVES): cv.entities_domain(LIGHT_DOMAIN),
+        vol.Required(CONF_MASTER): cv.entity_domain([SWITCH_DOMAIN, LIGHT_DOMAIN]),
+        vol.Required(CONF_SLAVES): cv.entities_domain([SWITCH_DOMAIN, LIGHT_DOMAIN]),
     }
 )
 
 
-class SyncSwitchGroup(GroupEntity, ToggleEntity):
+class SyncSwitchGroup(GroupEntity, LightEntity):
     """A Synchronised Group of Switches"""
 
     def __init__(
         self, unique_id: str, name: str, master: str, entity_ids: list[str]
     ) -> None:
+        _LOGGER.info(
+            "instantiatingSyncSwitchGroup synchronised switch with %s %s %s %s",
+            unique_id,
+            name,
+            master,
+            entity_ids,
+        )
         self.__entity_ids = entity_ids
         self.__master_id = master
 
@@ -160,6 +170,14 @@ async def async_setup_platform(
     discovery_info: Optional[DiscoveryInfoType] = None,  # pylint: disable=unused-argument
 ) -> None:
     """Set up the sensor platform."""
+    _LOGGER.info(
+        "async_setup_platform synchronised switch with %s %s %s %s",
+        config[CONF_UNIQUE_ID],
+        config[CONF_NAME],
+        config[CONF_MASTER],
+        config[CONF_SLAVES],
+    )
+
     async_add_entities(
         [
             SyncSwitchGroup(
@@ -183,6 +201,13 @@ async def async_setup_entry(
     entities = er.async_validate_entity_ids(registry, config_entry.options[CONF_SLAVES])
     master = er.async_validate_entity_id(registry, config_entry.options[CONF_MASTER])
 
+    _LOGGER.info(
+        "async_setup_entry synchronised switch %s %s %s %s",
+        config_entry.entry_id,
+        config_entry.title,
+        master,
+        entities,
+    )
     async_add_entities(
         [
             SyncSwitchGroup(
