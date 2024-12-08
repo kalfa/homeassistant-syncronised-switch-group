@@ -206,7 +206,7 @@ async def async_setup_platform(
     async_add_entities: AddEntitiesCallback,
     discovery_info: Optional[DiscoveryInfoType] = None,  # pylint: disable=unused-argument
 ) -> None:
-    """Set up the sensor platform via config yaml"""
+    """Setup platform via config yaml"""
     
     _LOGGER.info(
         "async_setup_platform synchronised switch with %s %s %s %s",
@@ -223,15 +223,10 @@ async def async_setup_platform(
                 entity_ids=config[CONF_SLAVES],
             )
 
-    #_subscribe_group_to_change_of_state_events(hass=hass, sync_group_entity=setup_entity,
-    #    master=config[CONF_MASTER], entities=config[CONF_SLAVES])
-    
-    print('foo', setup_entity.extra_state_attributes)
     attrs: ConfigType[str, str | None] = {'name': setup_entity.name}
            
-    entity_config = config[DOMAIN]
-    entity_id = async_generate_entity_id(entity_id_format=DOMAIN+'.{}',
-                                         name=entity_config[CONF_NAME],
+    entity_id = async_generate_entity_id(entity_id_format=LIGHT_DOMAIN+'.{}',
+                                         name=config[CONF_NAME],
                                          hass=hass)
     hass.states.async_set(entity_id=entity_id, new_state=setup_entity.state,
                           attributes=attrs)
