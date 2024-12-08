@@ -63,7 +63,11 @@ class SyncSwitchGroup(GroupEntity, LightEntity):
     """A Synchronised Group of Switches"""
 
     def __init__(
-        self, unique_id: str, name: str, master: str, entity_ids: list[str]
+        self,
+        unique_id: Optional[str],
+        name: Optional[str],
+        master: str,
+        entity_ids: list[str],
     ) -> None:
         _LOGGER.info(
             "instantiatingSyncSwitchGroup synchronised switch with %s %s %s %s",
@@ -172,8 +176,8 @@ async def async_setup_platform(
     """Set up the sensor platform."""
     _LOGGER.info(
         "async_setup_platform synchronised switch with %s %s %s %s",
-        config[CONF_UNIQUE_ID],
-        config[CONF_NAME],
+        config.get(CONF_UNIQUE_ID, "non present id"),
+        config.get(CONF_NAME, "non present name"),
         config[CONF_MASTER],
         config[CONF_SLAVES],
     )
@@ -182,7 +186,7 @@ async def async_setup_platform(
         [
             SyncSwitchGroup(
                 name=config[CONF_NAME],
-                unique_id=config[CONF_UNIQUE_ID],
+                unique_id=config.get(CONF_UNIQUE_ID, None),
                 master=config[CONF_MASTER],
                 entity_ids=config[CONF_SLAVES],
             )
