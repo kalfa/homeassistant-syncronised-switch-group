@@ -60,7 +60,7 @@ class SyncSwitchGroup(GroupEntity, SwitchEntity):
         entity_ids: list[str],
     ) -> None:
         _LOGGER.info(
-            "instantiatingSyncSwitchGroup synchronised switch with %s %s %s %s",
+            "instantiating SyncSwitchGroup synchronised switch with %s %s %s %s",
             unique_id,
             name,
             master,
