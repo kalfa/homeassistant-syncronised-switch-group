@@ -2,7 +2,7 @@
   "codeowners": ["@kalfa"],
   "config_flow": false,
   "dependencies": [],
-  "documentation": "https://github.com/kalfa/synchronised_switch/",
+  "documentation": "https://gitlab.com/labs.kalfa.dev/homeassistant-syncronised-switch-group",
   "domain": "synchronised_switch",
   "iot_class": "local_push",
   "name": "Synchronised Switches Group",
