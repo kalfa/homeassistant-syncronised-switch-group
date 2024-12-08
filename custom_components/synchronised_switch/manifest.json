@@ -1,6 +1,6 @@
 {
   "codeowners": ["@kalfa"],
-  "config_flow": false,
+  "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/kalfa/homeassistant-syncronised-switch-group.git",
   "domain": "synchronised_switch",

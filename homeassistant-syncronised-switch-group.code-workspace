@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "homeassistant-syncronised-switch-group",
+			"path": "."
+		},
+		{
+			"name": "core",
+			"path": "../homeassistant/core"
+		}
+	],
+	"settings": {}
+}
