@@ -80,11 +80,6 @@ async def test_default_state3(
 
     hass.states.async_set("switch.tv", "on")
 
-    await hass.async_block_till_done()
-    await hass.async_start()
-    await hass.async_block_till_done()
-
-
     await setup.async_setup_component(
         hass,
         domain=DOMAIN,
@@ -99,6 +94,9 @@ async def test_default_state3(
         },
     )
 
+    await hass.async_block_till_done()
+    await hass.async_start()
+    await hass.async_block_till_done()
 
     # ensure the entity-id is generated from name (is this a good behaviour?)
     entity_id = async_generate_entity_id(entity_id_format=DOMAIN+'.{}', name=GROUP_NAME, hass=hass)
