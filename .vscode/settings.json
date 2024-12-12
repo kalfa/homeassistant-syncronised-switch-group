@@ -3,6 +3,6 @@
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "ruff.format.preview": false,
-    "pylint.enabled": false,
+    "pylint.enabled": true,
     "pylint.importStrategy": "fromEnvironment"
 }

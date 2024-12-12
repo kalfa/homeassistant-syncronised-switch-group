@@ -1,63 +1,61 @@
 """Synchronised Switch group"""
-import sys
+
 from copy import deepcopy
-from functools import partial
 import logging
-from typing import Any, Iterable, Optional
+
+from typing import Any, Literal
+from functools import partial
+
+from propcache import cached_property
+
+from homeassistant.core import (
+    Event,
+    EventStateChangedData,
+    callback,
+)
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.components.group.entity import GroupEntity
-
-from homeassistant.helpers import entity_registry as er
-from homeassistant.core import Event, EventStateChangedData, callback, HomeAssistant
-
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_track_state_change_event
-from homeassistant.helpers.typing import (
-    ConfigType,
-    DiscoveryInfoType,
-)
-from homeassistant.helpers.entity import async_generate_entity_id
 
-#from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
+from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
 from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.const import (
-    CONF_NAME,
-    CONF_UNIQUE_ID,
     ATTR_ENTITY_ID,
     SERVICE_TURN_ON,
     SERVICE_TURN_OFF,
     STATE_UNKNOWN,
-    STATE_UNAVAILABLE,
     STATE_ON,
+    STATE_OFF,
 )
+from homeassistant.helpers.typing import StateType
 
-from .const import (
-    CONF_MASTER,
-    CONF_SLAVES,
-    DOMAIN,
-    PLATFORM_SCHEMA as DOMAIN_PLATFORM_SCHEMA,
-)
 
 _LOGGER = logging.getLogger(__name__)
 
+SUPPORTED_DOMAINS = [SWITCH_DOMAIN, LIGHT_DOMAIN]
 
-class SyncSwitchGroup(GroupEntity, SwitchEntity):
+
+class SyncSwitchGroup(SwitchEntity):
     """A Synchronised Group of Switches"""
 
-    _attr_available = False
+    _attr_available = True
+    _attr_is_on = None
     _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_state: StateType = STATE_UNKNOWN
 
     def __init__(
         self,
-        unique_id: Optional[str],
-        name: Optional[str],
+        unique_id: str,
+        name: str,
         master: str,
         entity_ids: list[str],
     ) -> None:
         _LOGGER.info(
-            "instantiating SyncSwitchGroup synchronised switch with %s %s %s %s",
+            (
+                "instantiating SyncSwitchGroup synchronised switch with "
+                "unique-id=%s name=%s master=%s entities=%s"
+            ),
             unique_id,
             name,
             master,
@@ -70,201 +68,223 @@ class SyncSwitchGroup(GroupEntity, SwitchEntity):
         self._attr_name = name
         self._attr_extra_state_attributes = {ATTR_ENTITY_ID: [master] + entity_ids[:]}
         self._attr_unique_id = unique_id
+        self._attr_entity_id = unique_id
 
-        # ToggleEntity which is the parent of SwitchEntity defines
-        # self._attr_is_on: bool|None
-        # self._attr_available: bool
-    
-    @property
+        # callable to unsubscribe from event handlers. by default a NOOP.
+        self.__unsubscribe = lambda: None
+
+    @cached_property
     def name(self):
         return self._attr_name
-        
+
+    @cached_property
+    def entity_id(self) -> str:
+        """The entity-id of the entity object"""
+        return self.unique_id
 
     @property
     def extra_state_attributes(self):
         return deepcopy(self._attr_extra_state_attributes)
-    
-        
 
+    async def async_added_to_hass(self):
+        _LOGGER.debug("Added to hass %s", self.entity_id)
 
-    def turn_off(self, **kwargs):
-        ...
+        unsub_master = async_track_state_change_event(
+            self.hass,
+            entity_ids=self._master_id,
+            action=partial(_master_changed, self),
+        )
+        unsub_entities = async_track_state_change_event(
+            self.hass, entity_ids=self._entity_ids, action=partial(_slave_changed, self)
+        )
 
+        def unsubscribe():
+            _LOGGER.debug("Unsubscribing master and slaves entities events handlers")
+            unsub_master()
+            unsub_entities()
 
-    def turn_on(self, **kwargs):
-        ...
+        self.__unsubscribe = unsubscribe
+
+    async def async_will_remove_from_hass(self):
+        self.hass.states.async_remove(self.entity_id, self._context)
+        self.__unsubscribe()
+
+        _LOGGER.debug("Remove from hass %s", self.entity_id)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Forward the turn_on command to all switches in the group."""
 
         _LOGGER.debug(
-            "Forwarded turn_on command to master %s and slaves %s",
+            "turn_on command to master %s and slaves %s",
             self._master_id,
             self._entity_ids,
         )
-
-        await self.hass.services.async_call(
-            LIGHT_DOMAIN,
-            SERVICE_TURN_ON,
-            {ATTR_ENTITY_ID: [self._master_id] + self._entity_ids},
-            blocking=True,
-            context=self._context,
-        )
+        await self.async_master_switch(to_state=STATE_ON)
+        await self.async_update()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Forward the turn_of command to all switches in the group."""
 
         _LOGGER.debug(
-            "Forwarded turn_off command to master %s and slaves %s",
+            "turn_off command to master %s and slaves %s",
             self._master_id,
             self._entity_ids,
         )
 
-        await self.hass.services.async_call(
-            LIGHT_DOMAIN,
-            SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: [self._master_id] + self._entity_ids},
-            blocking=True,
-            context=self._context,
+        await self.async_master_switch(to_state=STATE_OFF)
+        await self.async_update()
+
+    async def async_master_switch(
+        self, to_state: Literal["on"] | Literal["off"]
+    ) -> None:
+        """Change the master entity to the specified state and update group state.
+
+
+        An call to async_update() is necessary to change the state of all the
+        other entities in the group.
+        """
+        _LOGGER.debug(
+            "Changing master %s to %s",
+            self._master_id,
+            to_state,
         )
 
-    @callback
-    def async_update_group_state(self) -> None:
-        """Query all members and determine the switch group state.
-
-        The state of the entity is always the state of the defined master
-        entity, independently from the other "slave" entities.
-
-        Sync all avail entities to the state of the master, if they are
-        not already in sync with it.
-
-        An entity can be out of sync if they are switched as entity
-        i.e. not using this group entity
-        """
-        if (state := self.hass.states.get(self._master_id)) is not None:
-            master_state = state.state
-        else:
-            # Set group as unavailable if the master is unavail
-            self._attr_is_on = None
-            self._attr_available = master_state == STATE_UNAVAILABLE
+        if to_state == self.state:
             return
 
-        if master_state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-            self._attr_is_on = None
+        if to_state == STATE_ON:
+            service_name = SERVICE_TURN_ON
+        elif to_state == STATE_OFF:
+            service_name = SERVICE_TURN_OFF
         else:
-            self._attr_is_on = master_state == STATE_ON
+            _LOGGER.debug(
+                "Unsupported to update states to %s. Skipping update.", self.state
+            )
+            return
 
-        # entities that have their state not agreeing with the master entity
-        # and are not unavail/unknown either
-        not_in_sync_entities = [
-            entity_id
-            for entity_id in self._entity_ids
-            if (state := self.hass.states.get(entity_id)) is not None
-            and state.state not in (STATE_UNAVAILABLE, STATE_UNAVAILABLE)
-            and state.state != master_state
-        ]
-
-        # resync all avail entities which are not in sync
-        self.hass.services.call(
-            LIGHT_DOMAIN,
-            SERVICE_TURN_ON if master_state == STATE_ON else SERVICE_TURN_OFF,
-            {ATTR_ENTITY_ID: not_in_sync_entities},
+        await self.hass.services.async_call(
+            domain=self._master_id.split(".", 1)[0],
+            service=service_name,
+            service_data={ATTR_ENTITY_ID: [self._master_id]},
             blocking=True,
-            context=self._context,
         )
 
+        self._attr_is_on = to_state == STATE_ON
+        self._attr_state = to_state
 
+    async def async_update(self):
+        """Update entities according to master's state
 
-@callback
-def _master_changed(group_entity: SyncSwitchGroup, event: Event[EventStateChangedData]) -> None:
-    entity_id = event.data["entity_id"]
-    old_state = event.data["old_state"]
-    new_state = event.data["new_state"]
-    
-    print('master chaged:', entity_id, old_state, new_state, file=sys.stderr)
+        The update won't happen if the current group state is not 'on' or 'off'
 
+        Update HA state after the udpate.
+        """
+        _LOGGER.debug(
+            "update group entities %s to current master state: %s",
+            self._entity_ids,
+            self.state,
+        )
+        if self.state == STATE_ON:
+            service_name = SERVICE_TURN_ON
+        elif self.state == STATE_OFF:
+            service_name = SERVICE_TURN_OFF
+        else:
+            _LOGGER.debug(
+                "Unsupported state %s for async_update(). Skipping update.", self.state
+            )
+            return
 
-@callback
-def _slave_changed(group_entity: SyncSwitchGroup, event: Event[EventStateChangedData]) -> None:
-    entity_id = event.data["entity_id"]
-    old_state = event.data["old_state"]
-    new_state = event.data["new_state"]
-    
-    print('a slave chaged:', entity_id, old_state, new_state, file=sys.stderr)
-
-
-def _subscribe_group_to_change_of_state_events(hass: HomeAssistant, sync_group_entity: SyncSwitchGroup, master: str, entities: Iterable[str]):
-    async_track_state_change_event(hass, entity_ids=master, action=partial(_master_changed, sync_group_entity))
-    async_track_state_change_event(hass, entity_ids=entities, action=partial(_slave_changed, sync_group_entity))
-
-async def async_setup_platform(
-    hass: HomeAssistant,
-    config: ConfigType,
-    async_add_entities: AddEntitiesCallback,
-    discovery_info: Optional[DiscoveryInfoType] = None,  # pylint: disable=unused-argument
-) -> None:
-    """Setup platform via config yaml"""
-    
-    _LOGGER.info(
-        "async_setup_platform synchronised switch with %s %s %s %s",
-        config.get(CONF_UNIQUE_ID, "not-present-id"),
-        config.get(CONF_NAME, "not-present-name"),
-        config[CONF_MASTER],
-        config[CONF_SLAVES],
-    )
-
-    setup_entity = SyncSwitchGroup(
-                name=config[CONF_NAME],
-                unique_id=config.get(CONF_UNIQUE_ID, None),
-                master=config[CONF_MASTER],
-                entity_ids=config[CONF_SLAVES],
+        for supported_domain in SUPPORTED_DOMAINS:
+            await self.hass.services.async_call(
+                domain=supported_domain,
+                service=service_name,
+                service_data={
+                    ATTR_ENTITY_ID: [
+                        entity
+                        for entity in self._entity_ids
+                        if entity.startswith(f"{supported_domain}.")
+                    ]
+                },
+                blocking=True,
             )
 
-    attrs: ConfigType[str, str | None] = {'name': setup_entity.name}
-           
-    entity_id = async_generate_entity_id(entity_id_format=LIGHT_DOMAIN+'.{}',
-                                         name=config[CONF_NAME],
-                                         hass=hass)
-    hass.states.async_set(entity_id=entity_id, new_state=setup_entity.state,
-                          attributes=attrs)
-    async_add_entities([setup_entity], update_before_add=True)
+        self.async_write_ha_state()
 
 
-async def async_setup_entry(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+@callback
+def _master_changed(
+    group_entity: SyncSwitchGroup, event: Event[EventStateChangedData]
 ) -> None:
-    """Initialize Synchronised Switch Group entities, from UI added configuraitons
-    
-    https://developers.home-assistant.io/docs/config_entries_index/
+    """Update the master state"""
+    entity_id = event.data["entity_id"]
+    old_state = event.data["old_state"]
+    new_state = event.data["new_state"]
+
+    if not old_state:
+        # it is an initialisation change: ignore it
+        return
+
+    if new_state.state == old_state.state:
+        return
+
+    if new_state.state == group_entity.state:
+        _LOGGER.debug(
+            "master %s already in %s state. skip update triggered by %s",
+            entity_id,
+            new_state.state,
+            new_state.context.id,
+        )
+        return
+
+    _LOGGER.debug(
+        "master entity %s changed state from=%s to=%s triggered by %s. Updating group state",
+        entity_id,
+        old_state.state if old_state else old_state,
+        new_state.state,
+        new_state.context.id,
+    )
+
+    async_change_group_state = getattr(group_entity, f"async_turn_{new_state.state}")
+
+    if async_change_group_state is not None:
+        group_entity.hass.create_task(async_change_group_state())
+
+
+@callback
+def _slave_changed(
+    group_entity: SyncSwitchGroup, event: Event[EventStateChangedData]
+) -> None:
+    """Change master state on group entity, when a slave entity changes
+
+    To avoid useless events and loops, skip when there is no change
+    from the old to the new state, or from the current group state to the new state.
+
+    Otherwise, update the master state, to trigger the update.
+    The event handler for master will manage the rest of the update flow.
     """
-    raise Exception("sync_group.async_setup_entry called")
-    registry = er.async_get(hass)
-    entities = er.async_validate_entity_ids(registry, config_entry.options[CONF_SLAVES])
-    master = er.async_validate_entity_id(registry, config_entry.options[CONF_MASTER])
+    entity_id = event.data["entity_id"]
+    old_state = event.data["old_state"]
+    new_state = event.data["new_state"]
 
-    _LOGGER.info(
-        "async_setup_entry synchronised switch %s %s %s %s",
-        config_entry.entry_id,
-        config_entry.title,
-        master,
-        entities,
+    if not old_state:
+        # it is an initialisation change: ignore it
+        return
+
+    if old_state == new_state:
+        return
+
+    # This check avoid infinite loops and useless events in general:
+    # slave sends event which changes master, which updates slaves
+    # which sends event which changes master...
+    if new_state.state == group_entity.state:
+        return
+
+    _LOGGER.debug(
+        "entity %s chaged state from=%s to=%s",
+        entity_id,
+        old_state.state if old_state else old_state,
+        new_state.state,
     )
-    setup_entity = SyncSwitchGroup(
-                unique_id=config_entry.entry_id,
-                name=config_entry.title,
-                master=master,
-                entity_ids=entities,
-            )
-    attrs: ConfigType[str, str | None] = {'name': setup_entity.name}
-    attrs.update(setup_entity.extra_state_attributes)
-
-    print('foo', setup_entity.extra_state_attributes)             
-    hass.states.async_set(entity_id=f'{DOMAIN}.{setup_entity.name}', new_state=setup_entity.state,
-                          attributes=attrs)
-    
-    _subscribe_group_to_change_of_state_events(hass=hass, sync_group_entity=setup_entity,
-                                               master=master, entities=entities)
-
-    async_add_entities([setup_entity], update_before_add=True)
+    group_entity.hass.create_task(
+        group_entity.async_master_switch(to_state=new_state.state)
+    )
