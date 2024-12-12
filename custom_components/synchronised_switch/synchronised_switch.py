@@ -35,7 +35,7 @@ _LOGGER = logging.getLogger(__name__)
 SUPPORTED_DOMAINS = [SWITCH_DOMAIN, LIGHT_DOMAIN]
 
 
-class SyncSwitchGroup(SwitchEntity):
+class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
     """A Synchronised Group of Switches"""
 
     _attr_available = True
