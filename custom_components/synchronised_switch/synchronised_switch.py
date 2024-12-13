@@ -17,8 +17,6 @@ from homeassistant.core import (
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.helpers.event import async_track_state_change_event
 
-from homeassistant.components.switch import DOMAIN as SWITCH_DOMAIN
-from homeassistant.components.light import DOMAIN as LIGHT_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_ON,
@@ -29,10 +27,9 @@ from homeassistant.const import (
 )
 from homeassistant.helpers.typing import StateType
 
+from .const import SUPPORTED_DOMAINS
 
 _LOGGER = logging.getLogger(__name__)
-
-SUPPORTED_DOMAINS = [SWITCH_DOMAIN, LIGHT_DOMAIN]
 
 
 class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
@@ -53,20 +50,20 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
     ) -> None:
         _LOGGER.info(
             (
-                "instantiating SyncSwitchGroup synchronised switch with "
-                "unique-id=%s name=%s master=%s entities=%s"
+                "instantiating %s synchronised switch with "
+                "unique-id='%s' name='%s' master='%s' entities='%s'"
             ),
+            self.__class__.__name__,
             unique_id,
             name,
             master,
             entity_ids,
         )
-        self.mode = all
         self._entity_ids = entity_ids
         self._master_id = master
 
         self._attr_name = name
-        self._attr_extra_state_attributes = {ATTR_ENTITY_ID: [master] + entity_ids[:]}
+        self._attr_extra_state_attributes = {ATTR_ENTITY_ID: [master] + entity_ids}
         self._attr_unique_id = unique_id
         self._attr_entity_id = unique_id
 
@@ -158,7 +155,9 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
             service_name = SERVICE_TURN_OFF
         else:
             _LOGGER.debug(
-                "Unsupported to update states to %s. Skipping update.", self.state
+                "Unsupported to update states to %s (%s). Skipping update.",
+                self.state,
+                type(self.state),
             )
             return
 
@@ -180,17 +179,24 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         Update HA state after the udpate.
         """
         _LOGGER.debug(
-            "update group entities %s to current master state: %s",
+            "Update group entities %s to current master state: %s",
             self._entity_ids,
             self.state,
         )
+
+        if self.state is None:
+
+            return
+
         if self.state == STATE_ON:
             service_name = SERVICE_TURN_ON
         elif self.state == STATE_OFF:
             service_name = SERVICE_TURN_OFF
         else:
             _LOGGER.debug(
-                "Unsupported state %s for async_update(). Skipping update.", self.state
+                "Unsupported master state '%s' (type:%s) for async_update(). Skipping update.",
+                self.state,
+                type(self.state),
             )
             return
 
