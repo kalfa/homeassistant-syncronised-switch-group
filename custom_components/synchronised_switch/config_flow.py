@@ -28,18 +28,18 @@ class SynchronisedSwitchGroupConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
     VERSION = 1
     MINOR_VERSION = 1
 
-    async def async_step_user(self, info: dict[str, Any] | None = None):
-        if info is not None:
-            # TODO: user input should be processed here
-            pass
+    # async def async_step_user(self, info: dict[str, Any] | None = None):
+    #     if info is not None:
+    #         # TODO: user input should be processed here
+    #         pass
 
-        return self.async_show_form(step_id="user", data_schema=DATA_FORM_SCHEMA)
+    #     return self.async_show_form(step_id="user", data_schema=DATA_FORM_SCHEMA)
 
-    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None):
-        """Recongiguration step for ConfigFlow"""
-        # https://developers.home-assistant.io/blog/2024/03/21/config-entry-reconfigure-step/
-        # TODO: user input should be processed here
-        return self.async_show_form(
-            step_id="reconfigure",
-            data_schema=DATA_FORM_SCHEMA,
-        )
+    # async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None):
+    #     """Recongiguration step for ConfigFlow"""
+    #     # https://developers.home-assistant.io/blog/2024/03/21/config-entry-reconfigure-step/
+    #     # TODO: user input should be processed here
+    #     return self.async_show_form(
+    #         step_id="reconfigure",
+    #         data_schema=DATA_FORM_SCHEMA,
+    #     )

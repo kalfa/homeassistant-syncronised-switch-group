@@ -1,6 +1,5 @@
 """Synchronised Switch group"""
 
-from copy import deepcopy
 import logging
 
 from typing import Any, Literal
@@ -21,11 +20,9 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_ON,
     SERVICE_TURN_OFF,
-    STATE_UNKNOWN,
     STATE_ON,
     STATE_OFF,
 )
-from homeassistant.helpers.typing import StateType
 
 from .const import SUPPORTED_DOMAINS
 
@@ -35,19 +32,22 @@ _LOGGER = logging.getLogger(__name__)
 class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
     """A Synchronised Group of Switches"""
 
-    _attr_available = True
-    _attr_is_on = None
-    _attr_should_poll = False
-    _attr_has_entity_name = True
-    _attr_state: StateType = STATE_UNKNOWN
+    _attr_available: bool = True
+    _attr_is_on: bool | None = False
+    _attr_should_poll: bool = False
+    _attr_has_entity_name: bool = True
+    # _attr_state: StateType = STATE_UNKNOWN
 
     def __init__(
         self,
         unique_id: str,
         name: str,
-        master: str,
         entity_ids: list[str],
     ) -> None:
+        assert (
+            len(entity_ids) > 1
+        ), f"group should have at least two entities ({len(entity_ids)})"
+
         _LOGGER.info(
             (
                 "instantiating %s synchronised switch with "
@@ -56,14 +56,15 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
             self.__class__.__name__,
             unique_id,
             name,
-            master,
-            entity_ids,
+            entity_ids[0],
+            entity_ids[1:],
         )
-        self._entity_ids = entity_ids
-        self._master_id = master
+        # internally the first entity is elected master, and the state is synchronised around it.
+        self._master_id = entity_ids[0]
+        self._entity_ids = entity_ids[1:]
 
         self._attr_name = name
-        self._attr_extra_state_attributes = {ATTR_ENTITY_ID: [master] + entity_ids}
+        # self._attr_extra_state_attributes = {ATTR_ENTITY_ID: [master] + entity_ids}
         self._attr_unique_id = unique_id
         self._attr_entity_id = unique_id
 
@@ -79,9 +80,9 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         """The entity-id of the entity object"""
         return self.unique_id
 
-    @property
-    def extra_state_attributes(self):
-        return deepcopy(self._attr_extra_state_attributes)
+    # @property
+    # def extra_state_attributes(self):
+    #    return deepcopy(self._attr_extra_state_attributes)
 
     async def async_added_to_hass(self):
         _LOGGER.debug("Added to hass %s", self.entity_id)
@@ -95,6 +96,8 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
             self.hass, entity_ids=self._entity_ids, action=partial(_slave_changed, self)
         )
 
+        await self.__initialize_state()
+
         def unsubscribe():
             _LOGGER.debug("Unsubscribing master and slaves entities events handlers")
             unsub_master()
@@ -102,11 +105,11 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
 
         self.__unsubscribe = unsubscribe
 
+        _LOGGER.debug("NOW Added to hass %s", self.entity_id)
+
     async def async_will_remove_from_hass(self):
         self.hass.states.async_remove(self.entity_id, self._context)
         self.__unsubscribe()
-
-        _LOGGER.debug("Remove from hass %s", self.entity_id)
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Forward the turn_on command to all switches in the group."""
@@ -169,7 +172,14 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         )
 
         self._attr_is_on = to_state == STATE_ON
-        self._attr_state = to_state
+        # self._attr_state = to_state
+
+    async def __initialize_state(self):
+        """[Internal] Called oncem, when entity is added to HASS
+        Initialises its state according to the master's state
+        """
+        state = self.hass.states.get(self._master_id)
+        self._attr_is_on = state.state == STATE_ON if state is not None else STATE_OFF
 
     async def async_update(self):
         """Update entities according to master's state
@@ -185,7 +195,6 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         )
 
         if self.state is None:
-
             return
 
         if self.state == STATE_ON:

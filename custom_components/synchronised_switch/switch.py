@@ -13,8 +13,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from .const import (
-    CONF_MASTER,
-    CONF_SLAVES,
+    CONF_NAME,
+    CONF_ENTITIES,
     DOMAIN,
     PLATFORM_SCHEMA as DOMAIN_PLATFORM_SCHEMA,
 )
@@ -36,10 +36,9 @@ async def async_setup_platform(
     """Setup platform via config yaml"""
 
     _LOGGER.info(
-        f"{DOMAIN} platform setup with name=%s master-entity:%s slaves:%s",
+        f"{DOMAIN} platform setup with name=%s entities=%s",
         config[CONF_NAME],
-        config[CONF_MASTER],
-        config[CONF_SLAVES],
+        config[CONF_ENTITIES],
     )
 
     # being a virtual entity, grouping other entities,
@@ -51,10 +50,10 @@ async def async_setup_platform(
     setup_entity = SyncSwitchGroup(
         name=config[CONF_NAME],
         unique_id=entity_id,
-        master=config[CONF_MASTER],
-        entity_ids=config[CONF_SLAVES],
+        entity_ids=config[CONF_ENTITIES],
     )
-    async_add_entities([setup_entity], update_before_add=True)
+
+    async_add_entities([setup_entity], update_before_add=False)
 
 
 async def async_setup_entry(
