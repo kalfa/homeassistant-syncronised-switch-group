@@ -204,7 +204,7 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         # It has been initialised to a non none state.
         assert self.state is not None, "group state should be on or off, never None"
 
-        if self.state != self.hass.states.get(self._master_id):
+        if self.state != self.hass.states.get(self._master_id).state:
             _LOGGER.error(
                 "group state and master state differ. this should not happen."
             )
