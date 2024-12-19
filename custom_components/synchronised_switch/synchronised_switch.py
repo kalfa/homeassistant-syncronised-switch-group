@@ -1,6 +1,7 @@
 """Synchronised Switch group"""
 
-from html import entities
+import asyncio
+
 import logging
 
 from typing import Any, Literal
@@ -82,11 +83,29 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         """The entity-id of the entity object"""
         return self.unique_id
 
-    # @property
-    # def extra_state_attributes(self):
-    #    return deepcopy(self._attr_extra_state_attributes)
+    async def __async_initialize_state(self):
+        """[Internal] Called only once in object lifecycle, when entity is added to HASS
+
+        Initialises its state according to the master's state.
+
+        From this moment, the two states are/needs to be in sync
+
+        A call to async_update() is necessary to change the state of all the
+        other entities in the group.
+        """
+        # wait until is in a valid/non-none state
+        state = None
+        while state is None or state.state is None:
+            _LOGGER.debug("retrieving master %s state", self._master_id)
+            await asyncio.sleep(0.5)
+            state = self.hass.states.get(self._master_id)
+
+        self._attr_is_on = state.state == STATE_ON if state is not None else STATE_OFF
 
     async def async_added_to_hass(self):
+        # change the group state to the master's state and udpate the other entities.
+        await self.__async_initialize_state()
+        await self.async_update()
 
         unsub_master = async_track_state_change_event(
             self.hass,
@@ -96,10 +115,6 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         unsub_entities = async_track_state_change_event(
             self.hass, entity_ids=self._entity_ids, action=partial(_slave_changed, self)
         )
-
-        # change the group state to the master's state and udpate the other entities.
-        await self.__async_initialize_state()
-        await self.async_update()
 
         def unsubscribe():
             _LOGGER.debug("Unsubscribing master and slaves entities events handlers")
@@ -181,19 +196,6 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
 
         self._attr_is_on = to_state == STATE_ON
         # self._attr_state = to_state
-
-    async def __async_initialize_state(self):
-        """[Internal] Called only once in object lifecycle, when entity is added to HASS
-
-        Initialises its state according to the master's state.
-
-        From this moment, the two states are in sync.
-
-        A call to async_update() is necessary to change the state of all the
-        other entities in the group.
-        """
-        state = self.hass.states.get(self._master_id)
-        self._attr_is_on = state.state == STATE_ON if state is not None else STATE_OFF
 
     async def async_update(self):
         """Update entities according to group's state.
