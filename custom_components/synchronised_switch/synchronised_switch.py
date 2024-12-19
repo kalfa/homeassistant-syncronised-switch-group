@@ -166,14 +166,14 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         A call to async_update() is necessary to change the state of all the
         other entities in the group.
         """
+        if to_state == self.state:
+            return
+
         _LOGGER.debug(
             "Changing master %s to %s",
             self._master_id,
             to_state,
         )
-
-        if to_state == self.state:
-            return
 
         if to_state == STATE_ON:
             service_name = SERVICE_TURN_ON
@@ -236,6 +236,11 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
             )
             return
 
+        # first update HA state, then change state for entities
+        # so that any state-changed event triggered won't be propagated any further
+        # i.e. will be stopped processing since it's "same state"
+        self.schedule_update_ha_state()
+
         for supported_domain in SUPPORTED_DOMAINS:
             await self.hass.services.async_call(
                 domain=supported_domain,
@@ -249,8 +254,6 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
                 },
                 blocking=True,
             )
-
-        self.schedule_update_ha_state()
 
 
 @callback
@@ -352,7 +355,7 @@ def _slave_changed(
         return
 
     _LOGGER.debug(
-        "entity %s chaged state from=%s to=%s. updating group master entity.",
+        "entity %s chaged state from=%s to=%s. triggering group master entity update.",
         entity_id,
         old_state.state if old_state else old_state,
         new_state.state,
