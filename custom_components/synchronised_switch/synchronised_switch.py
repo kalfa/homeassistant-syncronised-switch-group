@@ -10,6 +10,7 @@ from propcache import cached_property
 from homeassistant.core import (
     Event,
     EventStateChangedData,
+    State,
     callback,
 )
 
@@ -85,7 +86,6 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
     #    return deepcopy(self._attr_extra_state_attributes)
 
     async def async_added_to_hass(self):
-        _LOGGER.debug("Added to hass %s", self.entity_id)
 
         unsub_master = async_track_state_change_event(
             self.hass,
@@ -105,20 +105,26 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
 
         self.__unsubscribe = unsubscribe
 
-        _LOGGER.debug("NOW Added to hass %s", self.entity_id)
+        _LOGGER.debug("%s added to hass", self.entity_id)
 
     async def async_will_remove_from_hass(self):
         self.hass.states.async_remove(self.entity_id, self._context)
         self.__unsubscribe()
 
+        _LOGGER.debug(
+            "%s about to be removed from hass. subscriptions un-registered.",
+            self.entity_id,
+        )
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Forward the turn_on command to all switches in the group."""
 
         _LOGGER.debug(
-            "turn_on command to master %s and slaves %s",
+            "turn_on command to group entities %s, %s",
             self._master_id,
-            self._entity_ids,
+            ", ".join(self._entity_ids),
         )
+
         await self.async_master_switch(to_state=STATE_ON)
         await self.async_update()
 
@@ -126,9 +132,9 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         """Forward the turn_of command to all switches in the group."""
 
         _LOGGER.debug(
-            "turn_off command to master %s and slaves %s",
+            "turn_off command to group entities %s, %s",
             self._master_id,
-            self._entity_ids,
+            ", ".join(self._entity_ids),
         )
 
         await self.async_master_switch(to_state=STATE_OFF)
@@ -139,8 +145,7 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
     ) -> None:
         """Change the master entity to the specified state and update group state.
 
-
-        An call to async_update() is necessary to change the state of all the
+        A call to async_update() is necessary to change the state of all the
         other entities in the group.
         """
         _LOGGER.debug(
@@ -182,20 +187,20 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         self._attr_is_on = state.state == STATE_ON if state is not None else STATE_OFF
 
     async def async_update(self):
-        """Update entities according to master's state
+        """Update entities according to group's state.
 
-        The update won't happen if the current group state is not 'on' or 'off'
+        The update won't happen if the current group state is not 'on' or 'off'.
 
         Update HA state after the udpate.
         """
-        _LOGGER.debug(
-            "Update group entities %s to current master state: %s",
-            self._entity_ids,
-            self.state,
-        )
-
         if self.state is None:
             return
+
+        _LOGGER.debug(
+            "Update group's entities %s to current group's state (%s)",
+            ", ".join(self._entity_ids),
+            self.state,
+        )
 
         if self.state == STATE_ON:
             service_name = SERVICE_TURN_ON
@@ -203,7 +208,7 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
             service_name = SERVICE_TURN_OFF
         else:
             _LOGGER.debug(
-                "Unsupported master state '%s' (type:%s) for async_update(). Skipping update.",
+                "Unsupported group's state '%s' (type:%s) for async_update(). Skipping update.",
                 self.state,
                 type(self.state),
             )
@@ -230,16 +235,12 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
 def _master_changed(
     group_entity: SyncSwitchGroup, event: Event[EventStateChangedData]
 ) -> None:
-    """Update the master state"""
+    """Update the group's state as consequence of a change of the master entity status"""
     entity_id = event.data["entity_id"]
-    old_state = event.data["old_state"]
-    new_state = event.data["new_state"]
+    old_state: State | None = event.data["old_state"]
+    new_state: State = event.data["new_state"]
 
-    if not old_state:
-        # it is an initialisation change: ignore it
-        return
-
-    if new_state.state == old_state.state:
+    if old_state and new_state.state == old_state.state:
         return
 
     if new_state.state == group_entity.state:
@@ -256,7 +257,7 @@ def _master_changed(
         entity_id,
         old_state.state if old_state else old_state,
         new_state.state,
-        new_state.context.id,
+        new_state.context.id if new_state.context else "uknown-event",
     )
 
     async_change_group_state = getattr(group_entity, f"async_turn_{new_state.state}")
@@ -269,7 +270,7 @@ def _master_changed(
 def _slave_changed(
     group_entity: SyncSwitchGroup, event: Event[EventStateChangedData]
 ) -> None:
-    """Change master state on group entity, when a slave entity changes
+    """Update the group's state as consequence of a change of the master entity status
 
     To avoid useless events and loops, skip when there is no change
     from the old to the new state, or from the current group state to the new state.
@@ -278,28 +279,37 @@ def _slave_changed(
     The event handler for master will manage the rest of the update flow.
     """
     entity_id = event.data["entity_id"]
-    old_state = event.data["old_state"]
-    new_state = event.data["new_state"]
+    old_state: State | None = event.data["old_state"]
+    new_state: State = event.data["new_state"]
 
-    if not old_state:
-        # it is an initialisation change: ignore it
-        return
+    assert new_state.state in [STATE_OFF, STATE_ON], "state should be on/off only"
 
-    if old_state == new_state:
+    if old_state and old_state.state == new_state.state:
+        # no change
+        _LOGGER.debug(
+            "old sate and new state are te same: %s. ignore.", new_state.state
+        )
         return
 
     # This check avoid infinite loops and useless events in general:
     # slave sends event which changes master, which updates slaves
     # which sends event which changes master...
     if new_state.state == group_entity.state:
+        # the entity moved to the same state of the group, ignore
+        _LOGGER.debug(
+            "%s change to state %s, but group is already in this state. ignore",
+            entity_id,
+            new_state.state,
+        )
         return
 
     _LOGGER.debug(
-        "entity %s chaged state from=%s to=%s",
+        "entity %s chaged state from=%s to=%s. updating group master entity.",
         entity_id,
         old_state.state if old_state else old_state,
         new_state.state,
     )
+    # trigger a change of state for master, triggering master's state change events
     group_entity.hass.create_task(
         group_entity.async_master_switch(to_state=new_state.state)
     )

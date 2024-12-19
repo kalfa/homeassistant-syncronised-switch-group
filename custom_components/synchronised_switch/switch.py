@@ -66,8 +66,11 @@ async def async_setup_entry(
     https://developers.home-assistant.io/docs/config_entries_index/
     """
     registry = er.async_get(hass)
-    entities = er.async_validate_entity_ids(registry, config_entry.options[CONF_SLAVES])
-    master = er.async_validate_entity_id(registry, config_entry.options[CONF_MASTER])
+    group_entities = er.async_validate_entity_ids(
+        registry, config_entry.options[CONF_ENTITIES]
+    )
+    master = group_entities[0]
+    entities: list[str] = group_entities[1:]
 
     _LOGGER.info(
         "async_setup_entry synchronised switch %s %s %s %s",
@@ -79,7 +82,6 @@ async def async_setup_entry(
     setup_entity = SyncSwitchGroup(
         unique_id=config_entry.entry_id,
         name=config_entry.title,
-        master=master,
         entity_ids=entities,
     )
 
