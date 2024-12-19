@@ -97,7 +97,7 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         state = None
         while state is None or state.state is None:
             _LOGGER.debug("retrieving master %s state", self._master_id)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(delay=0.5)
             state = self.hass.states.get(self._master_id)
 
         self._attr_is_on = state.state == STATE_ON if state is not None else STATE_OFF
@@ -195,7 +195,6 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         )
 
         self._attr_is_on = to_state == STATE_ON
-        # self._attr_state = to_state
 
     async def async_update(self):
         """Update entities according to group's state.
@@ -251,7 +250,7 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
                 blocking=True,
             )
 
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
 
 @callback
@@ -295,10 +294,10 @@ def _master_changed(
         new_state.context.id if new_state.context else "uknown-event",
     )
 
-    async_change_group_state = getattr(group_entity, f"async_turn_{new_state.state}")
+    async_update_group_state = getattr(group_entity, f"async_turn_{new_state.state}")
 
-    if async_change_group_state is not None:
-        group_entity.hass.create_task(async_change_group_state())
+    if async_update_group_state is not None:
+        group_entity.hass.create_task(async_update_group_state())
     else:
         _LOGGER.fatal(
             "master %s changed to unrecognised state '%s': it should be on/off only",
