@@ -1,5 +1,6 @@
 """Synchronised Switch group"""
 
+from html import entities
 import logging
 
 from typing import Any, Literal
@@ -204,13 +205,20 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         # It has been initialised to a non none state.
         assert self.state is not None, "group state should be on or off, never None"
 
-        if self.state != self.hass.states.get(self._master_id).state:
+        master_state = self.hass.states.get(self._master_id)
+        if master_state is None:
+            _LOGGER.error("master %s is in None state", self._master_id)
+            return
+
+        if self.state != master_state.state:
             _LOGGER.error(
-                "group state and master state differ. this should not happen."
+                "group %s state and master %s state differ. this should not happen.",
+                self.entity_id,
+                self._master_id,
             )
 
         _LOGGER.debug(
-            "Update group's entities %s to current group's state (%s)",
+            "Synchronise group's entities %s to current group's state (%s)",
             ", ".join(self._entity_ids),
             self.state,
         )
@@ -260,6 +268,12 @@ def _master_changed(
         return
 
     if old_state and new_state.state == old_state.state:
+        # no change
+        _LOGGER.debug(
+            "%s, old state and new state are the same: %s. ignore.",
+            entity_id,
+            new_state.state,
+        )
         return
 
     if new_state.state == group_entity.state:
@@ -318,7 +332,9 @@ def _slave_changed(
     if old_state and old_state.state == new_state.state:
         # no change
         _LOGGER.debug(
-            "old state and new state are te same: %s. ignore.", new_state.state
+            "%s, old state and new state are the same: %s. ignore.",
+            entity_id,
+            new_state.state,
         )
         return
 
