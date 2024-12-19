@@ -253,6 +253,12 @@ def _master_changed(
     old_state: State | None = event.data["old_state"]
     new_state: State = event.data["new_state"]
 
+    if old_state is None:
+        # <https://www.home-assistant.io/docs/configuration/events/#state_changed>
+        # state set for the first time
+        # this does not need to trigger a change of state for this object
+        return
+
     if old_state and new_state.state == old_state.state:
         return
 
@@ -277,6 +283,12 @@ def _master_changed(
 
     if async_change_group_state is not None:
         group_entity.hass.create_task(async_change_group_state())
+    else:
+        _LOGGER.fatal(
+            "master %s changed to unrecognised state '%s': it should be on/off only",
+            entity_id,
+            new_state.state,
+        )
 
 
 @callback
@@ -293,14 +305,20 @@ def _slave_changed(
     """
     entity_id = event.data["entity_id"]
     old_state: State | None = event.data["old_state"]
-    new_state: State = event.data["new_state"]
+    new_state: State | None = event.data["new_state"]
+
+    if old_state is None:
+        # <https://www.home-assistant.io/docs/configuration/events/#state_changed>
+        # state set for the first time
+        # this does not need to trigger a change of state for this object
+        return
 
     assert new_state.state in [STATE_OFF, STATE_ON], "state should be on/off only"
 
     if old_state and old_state.state == new_state.state:
         # no change
         _LOGGER.debug(
-            "old sate and new state are te same: %s. ignore.", new_state.state
+            "old state and new state are te same: %s. ignore.", new_state.state
         )
         return
 
