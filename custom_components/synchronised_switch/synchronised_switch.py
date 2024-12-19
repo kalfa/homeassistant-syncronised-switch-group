@@ -96,7 +96,9 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
             self.hass, entity_ids=self._entity_ids, action=partial(_slave_changed, self)
         )
 
-        await self.__initialize_state()
+        # change the group state to the master's state and udpate the other entities.
+        await self.__async_initialize_state()
+        await self.async_update()
 
         def unsubscribe():
             _LOGGER.debug("Unsubscribing master and slaves entities events handlers")
@@ -179,9 +181,15 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
         self._attr_is_on = to_state == STATE_ON
         # self._attr_state = to_state
 
-    async def __initialize_state(self):
-        """[Internal] Called oncem, when entity is added to HASS
-        Initialises its state according to the master's state
+    async def __async_initialize_state(self):
+        """[Internal] Called only once in object lifecycle, when entity is added to HASS
+
+        Initialises its state according to the master's state.
+
+        From this moment, the two states are in sync.
+
+        A call to async_update() is necessary to change the state of all the
+        other entities in the group.
         """
         state = self.hass.states.get(self._master_id)
         self._attr_is_on = state.state == STATE_ON if state is not None else STATE_OFF
@@ -193,8 +201,13 @@ class SyncSwitchGroup(SwitchEntity):  # pylint: disable=abstract-method
 
         Update HA state after the udpate.
         """
-        if self.state is None:
-            return
+        # It has been initialised to a non none state.
+        assert self.state is not None, "group state should be on or off, never None"
+
+        if self.state != self.hass.states.get(self._master_id):
+            _LOGGER.error(
+                "group state and master state differ. this should not happen."
+            )
 
         _LOGGER.debug(
             "Update group's entities %s to current group's state (%s)",
